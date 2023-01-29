@@ -1,56 +1,29 @@
-const userModel = require("../models/userModel")
+const User = require("../models/userModel")
 const bcrypt = require("bcrypt")
-const isValid = function (value) {
-    if (typeof value === "string" && value.trim().length === 0) return false
-    if (typeof value === "undefined" || value === null) return false
-    return true;
-};
+const nodemailer = require("nodemailer");
+const randomstring = require("randomstring");
 
 const registerUser = async (req, res) => {
     try {
         let data = req.body;
-        let { name, email, phone, password, confirmPassword } = data
+        let { name, email, phone, password } = data
 
-        if (Object.keys(data).length === 0)
-            return res.status(400).send({ status: false, message: "please enter author details" });
-
-        if (!isValid(name))
-            return res.status(400).send({ status: false, message: "please enter name" });
-        if (!(/^[a-zA-Z]+$/i).test(name))
-            return res.status(400).send({ status: false, message: "please provide valid first name It should be in Alphabet format" });
-
-        if (!isValid(email))
-            return res.status(400).send({ status: false, message: "please enter email address" });
-        if (!/^(([^<>()[\]\\.,;:\s@\"]+(\.[^<>()[\]\\.,;:\s@\"]+)*)|(\".+\"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/.test(email))
-            return res.status(400).send({ status: false, message: "please enter valid email" });
-        const checkusedEmail = await userModel.findOne({ email: email });
+        const checkusedEmail = await User.findOne({ email });
         if (checkusedEmail) {
             return res.status(400).send({ status: false, message: "email already used" });
         }
-
-        if (!isValid(phone))
-            return res.status(400).send({ status: false, message: "please enter phoen no. ..." });
-        if (!(/^[6789]\d{9}$/i).test(phone))
-            return res.status(400).send({ status: false, message: "Phone should be valid" });
-
-        if (!isValid(password))
-            return res.status(400).send({ status: false, message: "please enter password" });
-        if (!/^[a-zA-Z0-9@*#]{8,15}$/.test(password))
-            return res.status(400).send({ status: false, message: "Use any special character and Numbers password" });
-        if (password != confirmPassword) {
-            return res.status(400).send({ status: false, message: "password and confirmPassword should be same" })
-        }
         const encryptedPassword = await bcrypt.hash(password, 10)
+        let registerUser =await User.create({
+            name,
+            email,
+            phone,
+            password: encryptedPassword
 
-
-        const userDetails = { name, email, phone, password: encryptedPassword }
-        let savedData = await userModel.create(userDetails)
-        return res.status(201).send({ status: true, message: "register successfully ", data: savedData });
-
+        });
+        return res.status(201).send({ status: false, message: "Registered Sucessfully",data:registerUser });
     } catch (error) {
         return res.status(500).send({ status: false, message: error.message })
     }
-
 }
 
 //-=-=-=-=--=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-login=-=-==-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -58,12 +31,10 @@ const registerUser = async (req, res) => {
 const loginUser = async (req, res) => {
     try {
         let data = req.body
+        console.log(data)
+        let { email, phone, password } = data
 
-        let { email,phone, password } = data
-        if (Object.keys(data).length === 0)
-            return res.status(400).send({ status: false, message: "please enter author details" });
-
-        let user = await userModel.findOne({ $or:[{email: email},{phone:phone}] });
+        let user = await User.findOne({ $or: [{ email: email }, { phone: phone }] });
         if (!user) return res.status(400).send({ status: false, message: "Email is not correct, Please provide valid email" });
 
         if (!password) {
@@ -72,16 +43,95 @@ const loginUser = async (req, res) => {
 
         let pass = await bcrypt.compare(password, user.password)
         if (!pass) return res.status(400).send({ status: false, message: "Password is not correct, Please provide valid password" });
-
-        return res.status(200).send({ status: true, message: "signin successfully", data: user });
-
+        if(pass!=true){
+            return res.status(404).send({ status: false, message: "Password is not correct, Please provide valid password" })
+        }
+        return res.status(200).send({ status: true, message: "signin successfully", data: user })
 
     } catch (error) {
         return res.status(500).send({ status: false, err: error.message })
     }
 }
 
+//-=-=-=-=--=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+const sendresetPasswordMail = async (name, email, token) => {
+    try {
+        const transporter = nodemailer.createTransport({
+            host: 'smtp.ethereal.email',
+            port: 587,
+            auth: {
+                user: 'willie68@ethereal.email',        //https://ethereal.email/
+                pass: 'hAgztBk8ZCSMFnpe1d'        
+            }
+        });
+
+        const mailOptions = {
+            from: "omdhanurkar@gmail.com",
+            to: email,
+            subject: 'For reset password',
+            html: '<p>  hi ' + name + ' ,please copy the link and <a href="http:localhost:5000/api/forget-password?token=' + token + '"> reset your password </a>'
+        }
+        transporter.sendMail(mailOptions, function (error, info) {
+            if (error) {
+                console.log(error);
+            } else {
+                console.log("Mail has been sent :-", info.response);
+            }
+        });
+
+    } catch (err) {
+        return res.status(400).send({ status: false, message: err.message });
+    }
+}
+//-=-=-=-=--=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+const forget_password = async (req, res) => {
+    try {
+        let data = req.body.email;
+        let { email } = data;
+
+        const userdata = await User.findOne({ email })
+
+        if (userdata) {
+            const randomString = randomstring.generate();
+            await User.updateOne({ email }, { $set: { token: randomString } });
+            sendresetPasswordMail(userdata.name, userdata.email, randomString);
+
+            res.status(200).send({ status: true, message: "please check your email and reset the password" })
+        } else {
+            return res.status(404).send({ status: true, message: "this email does not exist" });
+        }
+
+    } catch (error) {
+        return res.status(400).send({ status: false, message: error.message });
+    }
+}
+
+//-=-=-=-=--=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+const reset_password = async (req, res) => {
+    try {
+        const token = req.body.token
+
+        const tokenData = await User.findOne({ token });
+        const password = req.body.password;
+
+        if (tokenData) {
+            const hashPassword = await bcrypt.hash(password, 10);
+
+            const userData = await User.findByIdAndUpdate({ _id: tokenData._id }, { $set: { password: hashPassword, token: '' } }, { new: true });
+
+            return res.status(200).send({ status: true, message: "user password has been reset", data: userData })
+
+        } else {
+            return res.status(400).send({ status: false, message: "this link is wrong or expired" });
+        }
+
+    } catch (error) {
+        return res.status(400).send({ status: false, message: error.message });
+    }
+}
 
 
-
-module.exports = { registerUser, loginUser }
+module.exports = { registerUser, loginUser, forget_password, reset_password } 
