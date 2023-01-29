@@ -5,10 +5,16 @@ const userSchema = new mongoose.Schema({
 
     email: { type: String },
 
-    phone: { type: Number },
+    phone: { type: String },
 
     password: { type: String },
-    confirmPassword: { type: String }
+
+    confirmPassword: { type: String },
+
+    token : {
+        type : String,
+        default : ''
+    }
 
 
 }, { timestamps: true });
